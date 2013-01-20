@@ -1,0 +1,25 @@
+#encoding UTF-8
+<html>
+    <head>
+        <title>HTML by Cheetah</title>
+    </head>
+    <body>
+        <table border="1">
+            <tr>
+                <th width="25%">date</th>
+                <th width="25%">name</th>
+                <th width="25%">distance(km)</th>
+                <th width="25%">time</th>
+            </tr>
+            #for $data in $history
+            #set $time = '%02s:%02s:%02s' % data.time
+            <tr>
+                <td width="25%"'>$data.date</td>
+                <td width="25%">$data.name</td>
+                <td width="25%">$data.distance</td>
+                <td width="25%">$time</td>
+            </tr>
+            #end for
+        </table>
+    </body>
+</html>
