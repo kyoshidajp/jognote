@@ -3,6 +3,12 @@
 """
 jognote.py
 JogNoteのデータをエクスポートします。
+
+使い方はif __name__ == '__main__'
+ブロックを参考にしてください。
+
+$ python jognote.py -i userid -p password  \
+    -s 2012/01 -e 2013/01 -o export.csv 
 """
 
 from bs4 import BeautifulSoup
@@ -15,23 +21,7 @@ import time
 import logging
 import optparse
 
-__author__ = 'kyoshidajp <http://www.kyoshida.jp>'
-
-class LoginError(Exception):
-    """
-    ログインのエラークラス
-    """
-    ACCOUNT_ERROR = 0
-    AUTH_ERROR = 1
-
-    def __init__(self, error_type):
-        self.error_type = error_type
-
-    def __str__(self):
-        if (self.error_type == self.ACCOUNT_ERROR):
-            return 'ユーザIDまたはパスワードが設定されていません。'
-        if (self.error_type == self.AUTH_ERROR):
-            return 'ログインに失敗しました。'
+__author__ = 'kyoshidajp <claddvd@gmail.com>'
 
 
 class Workout(object):
@@ -42,13 +32,14 @@ class Workout(object):
     RUN, SWIM, BIKE, WALK = range(4)
 
     def __init__(self, name=RUN):
-        # 日付
+        # 日付: datetime
         self.date = None
-        # 種類
+        # 種類: int
+        #   0: RUN, 1: SWIM, 2: BIKE, 3: WALK
         self.name = name
-        # 距離
+        # 距離(km): str 
         self.distance = None
-        # 時間
+        # 時間: strのtuple
         self.time = None
 
     def __cmp__(self, other):
@@ -74,11 +65,12 @@ class Jognote(object):
     """
 
     def __init__(self, user_id, user_pass,
-                 start_date, end_date, output_filename):
+                 start_date, end_date, 
+                 log_level=logging.WARNING):
 
         self.main_url = 'http://www.jognote.com'
-        self.EXPORT_START_DATE = '2011/01/01'
-        self.date_format = '%Y/%m/%d'
+        self.EXPORT_START_DATE = '2011/01'
+        self.date_format = '%Y/%m'
         self.today = datetime.now()
         # 1ページアクセスごとのスリープタイム
         self.SLEEP_TIME = 2
@@ -92,6 +84,8 @@ class Jognote(object):
         self.day_pattern = re.compile(r'(\d+?)日')
         self.distance_pattern = re.compile(r'\s([0-9.]+) km')
 
+        self.init_log(log_level)
+
         self.set_account(user_id, user_pass)
         self.set_export_date(start_date, end_date)
 
@@ -103,11 +97,8 @@ class Jognote(object):
         ログインアカウントの設定
         """
 
-        try:
-            if not (user_id and user_pass):
-                raise LoginError(LoginError.ACCOUNT_ERROR)
-        except LoginError, e:
-            print e
+        if not (user_id and user_pass):
+            logging.error('ユーザIDまたはパスワードが設定されていません。')
             sys.exit()
 
         # ログインアカウント情報
@@ -129,8 +120,8 @@ class Jognote(object):
             if self.start_date > self.end_date:
                 raise ValueError()
             pass
-        except ValueError, e:
-            print 'エクスポート開始日または終了日が正しく指定されていません。'
+        except ValueError:
+            logging.error('エクスポート開始日時または終了日時が正しく指定されていません。')
             sys.exit()
 
         # 未設定の場合はデフォルト日を設定
@@ -138,6 +129,11 @@ class Jognote(object):
             self.start_date = datetime.strptime(EXPORT_START_DATE, self.date_format)
         if not self.end_date:
             self.end_date = self.today
+
+        logging.debug('start date is %s/%s' 
+            % (str(self.start_date.year), str(self.start_date.month)))
+        logging.debug('end date is %s/%s' 
+            % (str(self.end_date.year), str(self.end_date.month)))
 
     def login(self):
         """
@@ -159,19 +155,26 @@ class Jognote(object):
 
         self.login()
 
+        history = []
+
         for year in range(self.start_date.year, self.end_date.year + 1):
 
             # エクスポート月の設定
             start_month, end_month = (1, 12)
             if year == self.start_date.year:
                 start_month = self.start_date.month
-                end_month = self.end_date.month
+                if year == self.end_date.year:
+                    end_month = self.end_date.month
 
             for month in range(start_month, end_month + 1):
-                print year, month
-                self.__export_by_month(year, month)
+                logging.debug('%02d/%02d' % (year, month))
+                history += self.__export_by_month(year, month)
+                logging.debug('%02d/%02d has %d data.' 
+                    % (year, month, len(history)))
                 if self.is_today_month(year, month):
-                    return
+                    return history
+
+        return history
 
     def is_today_month(self, year, month):
         """
@@ -189,8 +192,13 @@ class Jognote(object):
         月ごとのデータのエクスポート
         """
 
-        self.browser.open('%s/user/%s/days?month=%s&year=%s' 
-            % (self.main_url, self.user_num, month, year))
+        try:
+            self.browser.open('%s/user/%s/days?month=%s&year=%s' 
+                % (self.main_url, self.user_num, month, year))
+        except mechanize.HTTPError:
+            logging.error('アクセスに失敗しました。ユーザIDまたはパスワードを確認してください。')
+            sys.exit()
+
         body = self.browser.response().read()
 
         history = []
@@ -208,11 +216,10 @@ class Jognote(object):
 
             # 各ワークアウトデータを取得
             history += self.get_history(soup, date_str)
+            logging.debug('%s/%s%s' %(year, month, day))
 
             # 一休さん
             time.sleep(self.SLEEP_TIME)
-
-            break
 
         history.sort()
         return history
@@ -224,7 +231,7 @@ class Jognote(object):
         """
 
         workout_dict =  {
-            Workout.RUN : 'workout_jogs',
+            Workout.RUN  : 'workout_jogs',
             Workout.SWIM : 'workout_swims',
             Workout.BIKE : 'workout_bikes',
             Workout.WALK : 'workout_walks',
@@ -280,7 +287,7 @@ class Jognote(object):
         year = int(year_match.group(1)) if year_match else None
         month = int(month_match.group(1)) if month_match else None
         day = int(day_match.group(1)) if day_match else None
-        return datetime.datetime(year, month, day)
+        return datetime(year, month, day)
 
 
     def get_distance(self, strings):
@@ -302,9 +309,9 @@ class Jognote(object):
         hour_match = self.hour_pattern.search(strings)
         min_match = self.min_pattern.search(strings)
         sec_match = self.sec_pattern.search(strings)
-        hour = hour_match.group(1) if hour_match else None
-        min = min_match.group(1) if min_match else None
-        sec = sec_match.group(1) if sec_match else None
+        hour = hour_match.group(1) if hour_match else '0'
+        min = min_match.group(1) if min_match else '0'
+        sec = sec_match.group(1) if sec_match else '0'
         return (hour, min, sec)
 
 
@@ -319,15 +326,20 @@ class Jognote(object):
             num = num_pattern.search(url).group(1)
         return num
 
+    def init_log(self, level):
+        """
+        ログの設定
+        """
 
-def init_log():
-    """
-    ログの設定
-    """
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname)s %(message)s',
-                        filename='myapp.log',
-                        filemode='w')
+        try:
+            logging.basicConfig(level=level,
+                                format='[%(levelname)s] %(message)s',
+                                #filename='myapp.log',
+                                #filemode='w'
+                                )
+        except ValueError:
+            logging.error('ログレベルが正しく指定されていません。')
+            sys.exit()
 
 def get_opt():
     """
@@ -348,18 +360,24 @@ def get_opt():
     # エクスポート開始日時
     parser.add_option ('-s', '--startdate',
                        dest = 'start_date',
-                       help = 'Start date of export. Input yyyy/mm/dd. ex) 2010/01/01'
+                       help = 'Start date of export. Input yyyy/mm. ex) 2010/01'
                        )
     # エクスポート終了日時
     parser.add_option ('-e', '--enddate',
                        dest = 'end_date',
-                       help = 'End date of export. Input yyyy/mm/dd. ex) 2011/12/31'
+                       help = 'End date of export. Input yyyy/mm. ex) 2011/12'
                        )
     # 出力ファイル名
     parser.add_option ('-o', '--output',
                        dest = 'output_filename',
                        default = 'export',
                        help = 'Output file name'
+                       )
+    # ログレベル
+    parser.add_option ('-l', '--loglevel',
+                       dest = 'log_level',
+                       default = 'WARNING',
+                       help = 'Log level'
                        )
     options, remainder = parser.parse_args()
     return options
@@ -373,14 +391,15 @@ if __name__ == '__main__':
     start_date = options.start_date
     end_date = options.end_date
     output_filename = options.output_filename
+    log_level = options.log_level
     
-    #
-    jognote = Jognote(userid, password, start_date, 
-                      end_date, output_filename)
-    data_list = jognote.export()
-    sys.exit()
+    jog = Jognote(userid, password, start_date, 
+                  end_date, log_level)
+    history = jog.export()
 
-    # debug
-    for data in data_list:
-        logging.debug(data)
-
+    # CSV出力
+    import csv
+    writer = csv.writer(open(output_filename, 'wb'))
+    for data in history:
+        time = ':'.join(data.time)
+        writer.writerow([data.date, data.name, data.distance, time])
