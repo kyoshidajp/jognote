@@ -142,8 +142,15 @@ class Jognote(object):
         self.browser.form['u[n]'] = self.user_id   
         self.browser.form['u[p]'] = self.user_pass 
         self.browser.submit()
+        url = self.browser.geturl()
+
+        num_re = re.compile(r'^%s/users/(\d+?)$' % self.TOP_URL)
+        if not num_re.match(url):
+            logging.error('アクセスに失敗しました。ユーザIDまたはパスワードを確認してください。')
+            sys.exit()
+
         # ユーザ番号の取得
-        self.user_num = self.get_user_number(self.browser.geturl())
+        self.user_num = self.get_user_number(url)
 
     def export(self):
         """
@@ -193,7 +200,7 @@ class Jognote(object):
             self.browser.open('%s/user/%s/days?month=%s&year=%s' 
                 % (self.TOP_URL, self.user_num, month, year))
         except mechanize.HTTPError:
-            logging.error('アクセスに失敗しました。ユーザIDまたはパスワードを確認してください。')
+            logging.error('アクセスに失敗しました。')
             sys.exit()
 
         body = self.browser.response().read()
@@ -333,11 +340,8 @@ class Jognote(object):
         """
 
         try:
-            logging.basicConfig(level=level,
-                                format='[%(levelname)s] %(message)s',
-                                #filename='myapp.log',
-                                #filemode='w'
-                                )
+            format = '[%(levelname)s] %(message)s'
+            logging.basicConfig(level=level, format=format)
         except ValueError:
             logging.error('ログレベルが正しく指定されていません。')
             sys.exit()
