@@ -7,6 +7,10 @@ jognote.py
 
     $ python jognote.py -i userid -p password  \
         -s 2012/01 -e 2013/01 
+
+    環境変数 JOGNOTE_USERID JOGNOTE_PASSWORD
+    はそれぞれユーザIDとパスワードに対応し、
+    引数よりも優先されます。
 """
 
 from bs4 import BeautifulSoup
@@ -18,6 +22,7 @@ import sys
 import time
 import logging
 import optparse
+import os
 
 __author__ = 'kyoshidajp <claddvd@gmail.com>'
 
@@ -79,6 +84,12 @@ class Jognote(object):
         # ユーザ個別の番号
         self.user_num = None
 
+        env_userid = os.environ.get('JOGNOTE_USERID', False)
+        if env_userid:
+            user_id = env_userid
+        env_password = os.environ.get('JOGNOTE_PASSWORD', False)
+        if env_password:
+            user_pass = env_password
         self.user_id, self.user_pass = self.get_account(user_id, user_pass)
         self.start_date, self.end_date = self.get_export_date(start_date, end_date)
 
